@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reaktionstest</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 50px;
+        }
+        #reaction-button {
+            width: 200px;
+            height: 100px;
+            font-size: 20px;
+            font-weight: bold;
+            border: none;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+        .red {
+            background-color: red;
+        }
+        .green {
+            background-color: green;
+        }
+        #history {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Reaktionstest</h1>
+    <p>Klicke den Button, sobald er grün wird!</p>
+    
+    <button id="reaction-button" class="red">Warten...</button>
+    <p id="result"></p>
+
+    <h2>Letzte 10 Tests</h2>
+    <ul id="history"></ul>
+
+    <script>
+        let button = document.getElementById("reaction-button");
+        let resultText = document.getElementById("result");
+        let historyList = document.getElementById("history");
+        let startTime, endTime;
+        let history = [];
+
+        function startTest() {
+            resultText.textContent = "Warten...";
+            button.textContent = "Warten...";
+            button.classList.remove("green");
+            button.classList.add("red");
+            button.disabled = true;
+
+            let randomDelay = Math.random() * 3000 + 2000; // 2-5 Sekunden
+
+            setTimeout(() => {
+                startTime = new Date();
+                button.classList.remove("red");
+                button.classList.add("green");
+                button.textContent = "KLICK!";
+                button.disabled = false;
+            }, randomDelay);
+        }
+
+        button.addEventListener("click", () => {
+            if (button.classList.contains("green")) {
+                endTime = new Date();
+                let reactionTime = endTime - startTime;
+                resultText.textContent = `Reaktionszeit: ${reactionTime} ms`;
+
+                // Speichere das Ergebnis
+                let timestamp = new Date().toLocaleTimeString();
+                history.unshift(`${timestamp} - ${reactionTime} ms`);
+
+                // Begrenze auf 10 Einträge
+                if (history.length > 10) {
+                    history.pop();
+                }
+
+                // Zeige die Historie
+                historyList.innerHTML = "";
+                history.forEach(entry => {
+                    let li = document.createElement("li");
+                    li.textContent = entry;
+                    historyList.appendChild(li);
+                });
+
+                startTest();
+            }
+        });
+
+        startTest();
+    </script>
+
+</body>
+</html>
