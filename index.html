@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Reaktionstest</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -27,6 +28,18 @@
         }
         #history {
             margin-top: 20px;
+            list-style-type: none;
+            padding: 0;
+        }
+        li {
+            padding: 5px;
+            font-size: 18px;
+        }
+        #download-pdf {
+            margin-top: 20px;
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
         }
     </style>
 </head>
@@ -41,10 +54,13 @@
     <h2>Letzte 10 Tests</h2>
     <ul id="history"></ul>
 
+    <button id="download-pdf">Als PDF speichern</button>
+
     <script>
         let button = document.getElementById("reaction-button");
         let resultText = document.getElementById("result");
         let historyList = document.getElementById("history");
+        let downloadButton = document.getElementById("download-pdf");
         let startTime, endTime;
         let history = [];
 
@@ -72,8 +88,8 @@
                 let reactionTime = endTime - startTime;
                 resultText.textContent = `Reaktionszeit: ${reactionTime} ms`;
 
-                // Speichere das Ergebnis
-                let timestamp = new Date().toLocaleTimeString();
+                // Speichere das Ergebnis mit Datum & Uhrzeit
+                let timestamp = new Date().toLocaleString("de-DE");
                 history.unshift(`${timestamp} - ${reactionTime} ms`);
 
                 // Begrenze auf 10 Einträge
@@ -91,6 +107,22 @@
 
                 startTest();
             }
+        });
+
+        // Funktion zum PDF-Erstellen
+        downloadButton.addEventListener("click", () => {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+
+            doc.setFontSize(16);
+            doc.text("Reaktionstest Ergebnisse", 20, 20);
+            doc.setFontSize(12);
+
+            history.forEach((entry, index) => {
+                doc.text(entry, 20, 40 + index * 10);
+            });
+
+            doc.save("Reaktionstest-Ergebnisse.pdf");
         });
 
         startTest();
