@@ -19,6 +19,8 @@
   th,td{border:1px solid #ccc;padding:8px 10px}
   th{text-align:center;background:#f6f6f6}
   td{text-align:center}
+  #daily-section{display:none;}
+  #session-ctrl{margin-top:18px;padding:10px 16px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;}
   @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
 </style>
 </head>
@@ -26,27 +28,30 @@
   <h1>Reaktionstest</h1>
   <p>Klicke den Button, sobald er grün wird! (Zufällig nach 2–5 s)</p>
 
-  <button id="reaction-button" class="red">Warten…</button>
+  <button id="session-ctrl">Test starten (10 Messungen)</button>
+
+  <button id="reaction-button" class="red" style="display:none">Warten…</button>
   <p id="result" role="status" aria-live="polite"></p>
-  <div class="muted" id="offset-note"></div>
 
   <h2>Letzte 10 Tests</h2>
   <ul id="history"></ul>
 
   <button id="download-pdf">Als PDF speichern</button>
 
-  <h2 style="margin-top:28px">Tagesübersicht (lokal gespeichert)</h2>
-  <table id="daily-table">
-    <thead>
-      <tr><th>Datum</th><th>Beste Reaktionszeit (ms)</th><th>Ø letzte 10 (ms)</th></tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <section id="daily-section">
+    <h2 style="margin-top:28px">Tagesübersicht (lokal gespeichert)</h2>
+    <table id="daily-table">
+      <thead>
+        <tr><th>Datum</th><th>Beste Reaktionszeit (ms)</th><th>Ø letzte 10 (ms)</th></tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </section>
 
 <script>
 (() => {
   // ---- Einstellungen ----
-  const DEFAULT_OFFSET_MS = 80; // 60–100ms realistisch
+  const DEFAULT_OFFSET_MS = 80; // feste Abzugslogik, UI erwähnt es nicht ständig
   function getOffset(){ return +(localStorage.getItem("rt_offset_ms")||DEFAULT_OFFSET_MS); }
 
   // ---- DOM ----
@@ -54,11 +59,12 @@
   const resultEl = document.getElementById('result');
   const historyEl = document.getElementById('history');
   const pdfBtn = document.getElementById('download-pdf');
-  const offsetNote = document.getElementById('offset-note');
   const dailyTableBody = document.querySelector('#daily-table tbody');
+  const dailySection = document.getElementById('daily-section');
+  const sessionCtrl = document.getElementById('session-ctrl');
 
   // ---- Zustand ----
-  let state = 'idle';       // 'waiting' | 'ready' | 'idle'
+  let state = 'idle';       // 'idle' | 'waiting' | 'ready' | 'finished'
   let startTime = 0;        // performance.now() bei Grün
   let holding = false;      // ob Finger/Maus unten
 
@@ -69,8 +75,8 @@
   let remainingMs = 0;      // Rest bis readyAt (für Sichtbarkeitswechsel)
 
   const history = [];       // {ts, type:'hit'|'early', ms?} nur Anzeige (max 10)
-
-  offsetNote.textContent = `Es werden ${getOffset()} ms Geräte-Verarbeitung abgezogen.`;
+  let sessionHits = 0;      // gültige Treffer in aktueller Session
+  const MAX_HITS = 10;      // Abschluss nach 10 Treffern
 
   // ---- Persistenz (nur Hits werden dauerhaft gespeichert) ----
   const LS_KEY = 'rt_trials_v1';
@@ -125,7 +131,7 @@
   }
   function vibrateShort(){ if (navigator.vibrate) navigator.vibrate([15]); }
 
-  function pushEarly(msg='Zu früh! Versuch neu gestartet.'){
+  function pushEarly(msg='Zu früh!'){
     history.unshift({ts:new Date().toLocaleString('de-DE'), type:'early'});
     if(history.length>10) history.pop();
     renderHistory();
@@ -141,9 +147,15 @@
     history.unshift({ts: now.toLocaleString('de-DE'), type:'hit', ms: adj});
     if(history.length>10) history.pop();
     renderHistory();
-    resultEl.innerHTML = `Reaktionszeit: <strong>${adj} ms</strong> (gemessen: ${Math.round(rawMs)} ms)`;
+    resultEl.innerHTML = `Reaktionszeit: <strong>${adj} ms</strong>`;
     vibrateShort();
-    updateDailyTable();
+
+    sessionHits++;
+    if (sessionHits >= MAX_HITS) {
+      finishSession();       // Abschluss nach 10 Treffern
+    } else {
+      startTest();           // nächster Trial
+    }
   }
 
   // ===== Robustes Timing: garantiert echte 2–5 s im Vordergrund =====
@@ -152,22 +164,22 @@
     const now = performance.now();
     const toGo = Math.max(0, readyAt - now);
 
-    if (document.hidden) return; // im Hintergrund nichts planen
+    if (document.hidden || state !== 'waiting') return; // im Hintergrund / nicht in waiting: nichts planen
 
     scheduled = setTimeout(() => {
-      if (token !== trialToken) return; // alter Durchlauf
+      if (token !== trialToken || state !== 'waiting') return; // alter Durchlauf oder nicht mehr waiting
       const now2 = performance.now();
       if (now2 < readyAt) {             // Timer zu früh (Aufholer) -> Rest nachlegen
         armTimer(token);
         return;
       }
       requestAnimationFrame(() => {
-        if (token !== trialToken) return;
+        if (token !== trialToken || state !== 'waiting') return;
         state = 'ready';
         setGreen();
         startTime = performance.now();
         if (holding) { // Anti-Hold
-          pushEarly('Zu früh (gedrückt gehalten). Versuch neu gestartet.');
+          pushEarly('Zu früh (gedrückt gehalten).');
           startTest();
         }
       });
@@ -175,8 +187,9 @@
   }
 
   function startTest(){
+    if (state === 'finished') return;
     clearTimeout(scheduled);
-    trialToken++;                 // invalidiert alle alten Timer
+    trialToken++;                 // invalidiert alte Timer
     state='waiting'; setRed();
     startTime=0;
 
@@ -188,8 +201,39 @@
     armTimer(trialToken);
   }
 
+  function finishSession(){
+    clearTimeout(scheduled);
+    state = 'finished';
+    setRed();
+    btn.style.display = 'none';             // Reaktionsbutton ausblenden
+    sessionCtrl.textContent = 'Neuer Test (10 Messungen)';
+    sessionCtrl.style.display = 'inline-block';
+    updateDailyTable();                     // Tabelle aktualisieren
+    dailySection.style.display = 'block';   // Tabelle einblenden
+    resultEl.textContent = 'Test abgeschlossen.';
+  }
+
+  function startSession(){
+    // UI vorbereiten
+    history.length = 0;
+    renderHistory();
+    resultEl.textContent = '';
+    dailySection.style.display = 'none';        // erst nach Abschluss anzeigen
+    sessionCtrl.style.display = 'none';         // Start-Button ausblenden
+    btn.style.display = 'inline-block';         // Reaktionsbutton einblenden
+
+    // Zähler & State zurücksetzen
+    sessionHits = 0;
+    state = 'idle';
+    holding = false;
+
+    // los
+    startTest();
+  }
+
   // ---- Eingaben ----
   btn.addEventListener('pointerdown', ()=>{
+    if (state === 'finished') return;
     holding = true;
     if(state==='waiting'){
       pushEarly();
@@ -197,13 +241,15 @@
     } else if(state==='ready'){
       const raw = performance.now()-startTime;
       pushHit(raw);
-      startTest();
+      // startTest() wird in pushHit je nach Hits gezielt aufgerufen/abgebrochen
     }
   }, {passive:true});
 
   btn.addEventListener('pointerup', ()=>{ holding = false; }, {passive:true});
   btn.addEventListener('pointercancel', ()=>{ holding = false; }, {passive:true});
   btn.addEventListener('pointerleave', ()=>{ holding = false; }, {passive:true});
+
+  sessionCtrl.addEventListener('click', startSession);
 
   // ---- Sichtbarkeitswechsel: echte Restzeit weiterlaufen lassen ----
   document.addEventListener('visibilitychange', ()=>{
@@ -212,32 +258,41 @@
     clearTimeout(scheduled);
 
     if (document.hidden) {
-      state='idle';
-      setRed();
-      resultEl.textContent='Pausiert (Tab nicht sichtbar).';
+      if (state === 'waiting' || state === 'ready') {
+        state='idle';
+        setRed();
+        resultEl.textContent='Pausiert (Tab nicht sichtbar).';
+      }
     } else {
-      readyAt = performance.now() + remainingMs; // Restzeit neu ansetzen
-      armTimer(trialToken);
+      if (state !== 'finished' && sessionCtrl.style.display === 'none') {
+        // Session läuft: Restzeit fortführen
+        state = 'waiting';
+        setRed();
+        readyAt = performance.now() + remainingMs;
+        armTimer(trialToken);
+      }
     }
   });
 
-  // ---- PDF Export (nur sichtbare 10 + Hinweis auf Offset) ----
+  // ---- PDF Export (nur sichtbare 10 der Session + kleine Übersicht) ----
   pdfBtn.addEventListener('click', ()=>{
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     doc.setFontSize(16);
     doc.text('Reaktionstest Ergebnisse', 20, 20);
     doc.setFontSize(11);
-    doc.text(`Offset-Abzug: ${getOffset()} ms`, 20, 28);
-    let y=40;
+
+    let y=36;
+    doc.text('Letzte 10 Tests:', 20, y); y+=8;
     history.slice(0,10).forEach((it,i)=>{
       const line = it.type==='early'
         ? `${i+1}. ${it.ts} – zu früh`
         : `${i+1}. ${it.ts} – ${it.ms} ms`;
       doc.text(line, 20, y);
-      y+=8;
+      y+=7;
     });
-    // Tagesübersicht anhängen
+
+    // Tagesübersicht (kompakt)
     y += 8;
     doc.setFontSize(12);
     doc.text('Tagesübersicht:', 20, y); y+=8; doc.setFontSize(11);
@@ -249,15 +304,15 @@
       const best = Math.min(...list);
       const avg10 = Math.round(list.slice(0,10).reduce((s,x)=>s+x,0)/Math.min(10,list.length));
       doc.text(`${date}: Best ${best} ms | Ø10 ${avg10} ms`, 20, y);
-      y+=8;
+      y+=7;
     });
 
     doc.save('Reaktionstest-Ergebnisse.pdf');
   });
 
-  // ---- Initial: Tabelle laden + Test starten ----
-  updateDailyTable();
-  startTest();
+  // ---- Initial: noch kein Autostart, erst über Button starten ----
+  updateDailyTable();          // Tabelle ist zunächst versteckt, aber Daten werden geladen
+  // Session wird mit "Test starten (10 Messungen)" begonnen
 })();
 </script>
 </body>
