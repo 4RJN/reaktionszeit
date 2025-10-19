@@ -2,108 +2,268 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
 <title>Reaktionstest</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
-  :root { --warn:#d00; --ok:#2a2; }
-  body{font-family:Arial,sans-serif;text-align:center;margin:40px;}
-  #reaction-button{width:220px;height:110px;font-size:20px;font-weight:700;border:none;border-radius:12px;color:#fff;cursor:pointer;}
-  .red{background:#d33;}
-  .green{background:#2a2;}
-  #history{list-style:none;padding:0;margin-top:16px}
-  #history li{padding:4px 0;font-size:18px}
-  #history li.early{color:var(--warn);font-weight:600}
-  .muted{color:#666;font-size:14px;margin-top:6px}
-  table{margin:20px auto;border-collapse:collapse;min-width:320px}
-  th,td{border:1px solid #ccc;padding:8px 10px}
-  th{text-align:center;background:#f6f6f6}
-  td{text-align:center}
-  #daily-section{display:none;}
-  #session-ctrl{margin-top:18px;padding:10px 16px;border:1px solid #ccc;border-radius:8px;background:#fff;cursor:pointer;}
-  @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+  /* ========== Design Tokens (mobile-first) ========== */
+  :root{
+    --bg: #0f1115;
+    --card: #151923;
+    --muted: #9aa3b2;
+    --text: #e8ecf1;
+    --border: #272e3b;
+
+    --brand: #4f83ff;
+    --brand-600: #2f6bff;
+    --green: #29c76f;
+    --green-700: #1e9c56;
+    --red: #ff4d4f;
+    --red-700:#d83a3c;
+
+    --radius: 16px;
+    --shadow: 0 8px 24px rgba(0,0,0,.25);
+    --shadow-soft: 0 6px 16px rgba(0,0,0,.18);
+
+    --space-1: .5rem;
+    --space-2: .75rem;
+    --space-3: 1rem;
+    --space-4: 1.25rem;
+    --space-5: 1.75rem;
+    --space-6: 2rem;
+
+    --fs-1: clamp(14px, 3.2vw, 16px);
+    --fs-2: clamp(16px, 4vw, 18px);
+    --fs-3: clamp(18px, 5vw, 22px);
+    --fs-4: clamp(20px, 6vw, 26px);
+  }
+
+  @media (prefers-color-scheme: light){
+    :root{
+      --bg: #f6f7fb;
+      --card: #ffffff;
+      --text: #0c1222;
+      --muted: #5a6472;
+      --border: #e7eaf0;
+      --shadow: 0 8px 24px rgba(16,24,40,.12);
+      --shadow-soft: 0 6px 16px rgba(16,24,40,.08);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    *{ animation: none !important; transition: none !important; }
+  }
+
+  /* ========== Base ========== */
+  html,body{ height:100%; }
+  body{
+    margin:0;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
+    color: var(--text);
+    background: radial-gradient(1200px 800px at 50% -10%, rgba(79,131,255,.18), transparent 60%), var(--bg);
+    line-height:1.45;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  .container{
+    max-width: 780px;
+    margin: 0 auto;
+    padding: var(--space-5) var(--space-3);
+  }
+
+  h1{ font-size: var(--fs-4); margin: 0 0 var(--space-2); letter-spacing:.2px; }
+  p.lead{ font-size: var(--fs-2); color: var(--muted); margin:0 0 var(--space-4); }
+
+  /* ========== Cards ========== */
+  .card{
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: var(--space-4);
+    margin-bottom: var(--space-5);
+  }
+
+  .stack{ display:flex; flex-direction:column; gap: var(--space-3); }
+
+  /* ========== Buttons ========== */
+  .btn{
+    appearance: none; border:0; cursor:pointer; user-select:none;
+    border-radius: 12px;
+    padding: 14px 18px;
+    font-weight: 700; font-size: var(--fs-2);
+    color: #fff;
+    transition: transform .06s ease, box-shadow .2s ease, background .2s ease, opacity .2s ease;
+    box-shadow: var(--shadow-soft);
+  }
+  .btn:active{ transform: translateY(1px) scale(.99); }
+  .btn:focus-visible{ outline: 2px solid var(--brand); outline-offset: 2px; }
+
+  #session-ctrl{
+    background: linear-gradient(180deg, var(--brand), var(--brand-600));
+  }
+  #session-ctrl:hover{ filter: brightness(1.04); }
+
+  #download-pdf{
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  #download-pdf:hover{ background: rgba(255,255,255,.04); }
+
+  /* ========== Reaction Button ========== */
+  #reaction-button{
+    width: 100%;
+    min-height: 120px;
+    font-size: var(--fs-3);
+    border-radius: 18px;
+    color:#fff;
+    box-shadow: var(--shadow);
+  }
+  #reaction-button.red{ background: linear-gradient(180deg, var(--red), var(--red-700)); }
+  #reaction-button.green{ background: linear-gradient(180deg, var(--green), var(--green-700)); }
+
+  /* ========== Progress ========== */
+  .progress-wrap{ width:100%; background: rgba(255,255,255,.06); border:1px solid var(--border); border-radius: 999px; overflow:hidden; height: 12px; }
+  .progress-bar{ height:100%; width:0%; background: linear-gradient(90deg, var(--brand), var(--green)); transition: width .25s ease; }
+
+  /* ========== History & Table ========== */
+  #history{ list-style:none; padding:0; margin:0; display:grid; gap:8px; }
+  #history li{
+    padding:10px 12px; border:1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.03);
+    display:flex; justify-content:space-between; align-items:center; font-size: var(--fs-1);
+  }
+  #history li.early{ color: var(--red); border-color: rgba(255,77,79,.35); background: rgba(255,77,79,.06); }
+
+  table{ width:100%; border-collapse: collapse; overflow:hidden; border-radius: 12px; border:1px solid var(--border); background: var(--card); }
+  thead th{ font-weight:700; background: rgba(255,255,255,.04); }
+  th,td{ padding: 12px; text-align:center; font-size: var(--fs-1); border-bottom:1px solid var(--border); }
+  tbody tr:last-child td{ border-bottom:0; }
+
+  .subtle{ color: var(--muted); font-size: var(--fs-1); }
+
+  /* Layout helpers */
+  .row{ display:flex; gap: var(--space-3); flex-wrap: wrap; }
+  .row .col{ flex: 1 1 260px; }
+
 </style>
 </head>
 <body>
-  <h1>Reaktionstest</h1>
-  <p>Klicke den Button, sobald er grün wird! (Zufällig nach 2–5 s)</p>
+  <div class="container">
+    <header class="stack">
+      <h1>Reaktionstest</h1>
+      <p class="lead">Klicke den Button, sobald er grün wird. 10 gültige Messungen pro Test.</p>
+    </header>
 
-  <button id="session-ctrl">Test starten (10 Messungen)</button>
+    <section class="card stack">
+      <div class="row">
+        <div class="col">
+          <button id="session-ctrl" class="btn">Test starten (10 Messungen)</button>
+        </div>
+        <div class="col">
+          <button id="download-pdf" class="btn" title="PDF mit Ergebnissen">Als PDF speichern</button>
+        </div>
+      </div>
 
-  <button id="reaction-button" class="red" style="display:none">Warten…</button>
-  <p id="result" role="status" aria-live="polite"></p>
+      <div class="progress-wrap" aria-hidden="true">
+        <div id="progress" class="progress-bar"></div>
+      </div>
 
-  <h2>Letzte 10 Tests</h2>
-  <ul id="history"></ul>
+      <button id="reaction-button" class="red" style="display:none">Warten…</button>
+      <p id="result" role="status" aria-live="polite" class="subtle"></p>
+    </section>
 
-  <button id="download-pdf">Als PDF speichern</button>
+    <section class="card">
+      <h2 style="margin-top:0; font-size: var(--fs-3);">Letzte 10 Tests</h2>
+      <ul id="history"></ul>
+    </section>
 
-  <section id="daily-section">
-    <h2 style="margin-top:28px">Tagesübersicht (lokal gespeichert)</h2>
-    <table id="daily-table">
-      <thead>
-        <tr><th>Datum</th><th>Beste Reaktionszeit (ms)</th><th>Ø letzte 10 (ms)</th></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
+    <section id="daily-section" class="card" style="display:none;">
+      <h2 style="margin-top:0; font-size: var(--fs-3);">Tagesübersicht</h2>
+      <table id="daily-table">
+        <thead>
+          <tr><th>Datum</th><th>Beste Reaktionszeit (ms)</th><th>Ø letzte 10 (ms)</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <p class="subtle" style="margin-top: var(--space-2);">Wird lokal gespeichert. Seite neu laden, Tabelle bleibt erhalten.</p>
+    </section>
+  </div>
 
 <script>
 (() => {
-  // ---- Einstellungen ----
+  // ========= Einstellungen & Helpers =========
   const DEFAULT_OFFSET_MS = 80;
-  function getOffset(){ return +(localStorage.getItem("rt_offset_ms")||DEFAULT_OFFSET_MS); }
+  const getOffset = () => +(localStorage.getItem("rt_offset_ms")||DEFAULT_OFFSET_MS);
+  const vibrateShort = () => { if (navigator.vibrate) navigator.vibrate([15]); };
+  const pad2 = n => String(n).padStart(2,'0');
+  const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
 
-  // ---- DOM ----
+  // ========= DOM =========
   const btn = document.getElementById('reaction-button');
   const resultEl = document.getElementById('result');
   const historyEl = document.getElementById('history');
   const pdfBtn = document.getElementById('download-pdf');
+  const sessionCtrl = document.getElementById('session-ctrl');
+  const progressBar = document.getElementById('progress');
   const dailyTableBody = document.querySelector('#daily-table tbody');
   const dailySection = document.getElementById('daily-section');
-  const sessionCtrl = document.getElementById('session-ctrl');
 
-  // ---- Zustand ----
-  let state = 'idle';       // 'idle' | 'waiting' | 'ready' | 'finished'
-  let startTime = 0;        // performance.now() bei Grün
-  let holding = false;      // ob Finger/Maus unten
+  // ========= State =========
+  let state = 'idle';         // 'idle' | 'waiting' | 'ready' | 'finished'
+  let startTime = 0;
+  let holding = false;
 
-  // Robuster Timer-State
-  let scheduled = null;     // Timeout-ID (einziger aktiver Timer)
-  let trialToken = 0;       // invalidiert alte Timer
-  let readyAt = 0;          // Zeitpunkt (perf.now) ab dem grün werden darf
-  let remainingMs = 0;      // Rest bis readyAt
+  // Robustes Timing
+  let scheduled = null;
+  let trialToken = 0;
+  let readyAt = 0;
+  let remainingMs = 0;
 
-  const history = [];       // {ts, type:'hit'|'early', ms?} nur Anzeige (max 10)
-  let sessionHits = 0;      // gültige Treffer in aktueller Session
-  const MAX_HITS = 10;      // Abschluss nach 10 Treffern
+  const history = [];         // Anzeige-Historie (max 10)
+  let sessionHits = 0;
+  const MAX_HITS = 10;
 
-  // ---- Persistenz (nur Hits werden dauerhaft gespeichert) ----
+  // ========= Persistenz =========
   const LS_KEY = 'rt_trials_v1';
-  function loadTrials(){
-    try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); }
-    catch { return []; }
-  }
+  const loadTrials = () => { try { return JSON.parse(localStorage.getItem(LS_KEY)||'[]'); } catch { return []; } };
   function saveTrial(trial){
     const trials = loadTrials();
-    trials.unshift(trial);                 // jüngste vorne
-    if (trials.length > 1000) trials.pop();// Kappung
+    trials.unshift(trial);
+    if (trials.length > 1000) trials.pop();
     localStorage.setItem(LS_KEY, JSON.stringify(trials));
   }
-  function ymd(d){ // YYYY-MM-DD
-    const pad = n=>String(n).padStart(2,'0');
-    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+  // ========= UI helpers =========
+  const setRed = () => { btn.classList.add('red'); btn.classList.remove('green'); btn.textContent='Warten…'; };
+  const setGreen = () => { btn.classList.remove('red'); btn.classList.add('green'); btn.textContent='KLICK!'; };
+
+  function renderHistory(){
+    historyEl.innerHTML='';
+    history.slice(0,10).forEach(it=>{
+      const li=document.createElement('li');
+      const left = document.createElement('span');
+      const right = document.createElement('span');
+      left.textContent = it.ts;
+      if(it.type==='early'){
+        li.className='early';
+        right.textContent = 'zu früh';
+      }else{
+        right.textContent = `${it.ms} ms`;
+      }
+      li.append(left, right);
+      historyEl.appendChild(li);
+    });
   }
 
-  // ---- Tagesübersicht rendern (liefert Zeilenanzahl zurück) ----
   function updateDailyTable(){
-    const trials = loadTrials(); // nur Hits gespeichert
+    const trials = loadTrials();
     const byDate = new Map();
     for (const t of trials){
       if (typeof t.ms !== 'number') continue;
-      const arr = byDate.get(t.date) || [];
-      arr.push(t.ms);              // neueste zuerst
-      byDate.set(t.date, arr);
+      (byDate.get(t.date) || byDate.set(t.date,[]).get(t.date)).push(t.ms);
     }
     const rows = Array.from(byDate.entries()).sort((a,b)=> (a[0] < b[0] ? 1 : -1));
     dailyTableBody.innerHTML = '';
@@ -115,28 +275,15 @@
       tr.innerHTML = `<td>${date}</td><td>${best}</td><td>${avg10}</td>`;
       dailyTableBody.appendChild(tr);
     }
-    return rows.length;
+    dailySection.style.display = rows.length ? 'block' : 'none';
   }
 
-  function ensureDailySectionVisibility(){
-    const count = updateDailyTable();
-    dailySection.style.display = count > 0 ? 'block' : 'none';
+  function setProgress(n){ // 0..10
+    const pct = Math.max(0, Math.min(10, n)) / 10 * 100;
+    progressBar.style.width = pct + '%';
   }
 
-  // ---- UI / Anzeige Historie (nicht persistent) ----
-  function setRed(){ btn.classList.add('red'); btn.classList.remove('green'); btn.textContent='Warten…'; }
-  function setGreen(){ btn.classList.remove('red'); btn.classList.add('green'); btn.textContent='KLICK!'; }
-  function renderHistory(){
-    historyEl.innerHTML='';
-    history.slice(0,10).forEach(it=>{
-      const li=document.createElement('li');
-      if(it.type==='early'){ li.textContent=`${it.ts} – zu früh`; li.className='early'; }
-      else { li.textContent=`${it.ts} – ${it.ms} ms`; }
-      historyEl.appendChild(li);
-    });
-  }
-  function vibrateShort(){ if (navigator.vibrate) navigator.vibrate([15]); }
-
+  // ========= Ergebnisaktionen =========
   function pushEarly(msg='Zu früh!'){
     history.unshift({ts:new Date().toLocaleString('de-DE'), type:'early'});
     if(history.length>10) history.pop();
@@ -150,6 +297,7 @@
     const now = new Date();
     const trial = { tsISO: now.toISOString(), date: ymd(now), ms: adj };
     saveTrial(trial);
+
     history.unshift({ts: now.toLocaleString('de-DE'), type:'hit', ms: adj});
     if(history.length>10) history.pop();
     renderHistory();
@@ -157,17 +305,15 @@
     vibrateShort();
 
     sessionHits++;
-    if (sessionHits >= MAX_HITS) {
-      finishSession();
-    } else {
-      startTest();
-    }
+    setProgress(sessionHits);
 
-    // Nach jedem Hit: Tabelle aktualisieren und sichtbar halten
-    ensureDailySectionVisibility();
+    if (sessionHits >= MAX_HITS) finishSession();
+    else startTest();
+
+    updateDailyTable();
   }
 
-  // ===== Robustes Timing: garantiert echte 2–5 s im Vordergrund =====
+  // ========= Robustes Timing =========
   function armTimer(token) {
     clearTimeout(scheduled);
     const now = performance.now();
@@ -178,10 +324,7 @@
     scheduled = setTimeout(() => {
       if (token !== trialToken || state !== 'waiting') return;
       const now2 = performance.now();
-      if (now2 < readyAt) {
-        armTimer(token);
-        return;
-      }
+      if (now2 < readyAt) { armTimer(token); return; }
       requestAnimationFrame(() => {
         if (token !== trialToken || state !== 'waiting') return;
         state = 'ready';
@@ -217,27 +360,24 @@
     btn.style.display = 'none';
     sessionCtrl.textContent = 'Neuer Test (10 Messungen)';
     sessionCtrl.style.display = 'inline-block';
-    ensureDailySectionVisibility(); // Tabelle sichtbar halten
     resultEl.textContent = 'Test abgeschlossen.';
+    updateDailyTable();
   }
 
   function startSession(){
-    // UI vorbereiten
     history.length = 0;
     renderHistory();
     resultEl.textContent = '';
+    btn.style.display = 'block';
     sessionCtrl.style.display = 'none';
-    btn.style.display = 'inline-block';
-
-    // Zähler & State zurücksetzen
     sessionHits = 0;
+    setProgress(0);
     state = 'idle';
     holding = false;
-
     startTest();
   }
 
-  // ---- Eingaben ----
+  // ========= Events =========
   btn.addEventListener('pointerdown', ()=>{
     if (state === 'finished') return;
     holding = true;
@@ -250,13 +390,12 @@
     }
   }, {passive:true});
 
-  btn.addEventListener('pointerup', ()=>{ holding = false; }, {passive:true});
-  btn.addEventListener('pointercancel', ()=>{ holding = false; }, {passive:true});
-  btn.addEventListener('pointerleave', ()=>{ holding = false; }, {passive:true});
+  ['pointerup','pointercancel','pointerleave'].forEach(ev=>{
+    btn.addEventListener(ev, ()=>{ holding = false; }, {passive:true});
+  });
 
   sessionCtrl.addEventListener('click', startSession);
 
-  // ---- Sichtbarkeitswechsel ----
   document.addEventListener('visibilitychange', ()=>{
     const now = performance.now();
     remainingMs = Math.max(0, readyAt - now);
@@ -278,7 +417,6 @@
     }
   });
 
-  // ---- PDF Export ----
   pdfBtn.addEventListener('click', ()=>{
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
@@ -296,7 +434,6 @@
       y+=7;
     });
 
-    // Tagesübersicht (kompakt)
     y += 8;
     doc.setFontSize(12);
     doc.text('Tagesübersicht:', 20, y); y+=8; doc.setFontSize(11);
@@ -310,13 +447,12 @@
       doc.text(`${date}: Best ${best} ms | Ø10 ${avg10} ms`, 20, y);
       y+=7;
     });
-
     doc.save('Reaktionstest-Ergebnisse.pdf');
   });
 
-  // ---- Initial: Tabelle aus Cache anzeigen (falls vorhanden), Session optional starten ----
-  ensureDailySectionVisibility(); // zeigt die Tabelle sofort, wenn Daten im Cache sind
-  // Session startet nur per Button
+  // ========= Init =========
+  updateDailyTable(); // zeigt Tabelle sofort, wenn Daten existieren
+  // Session startet per Button
 })();
 </script>
 </body>
