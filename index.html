@@ -1,132 +1,161 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Reaktionstest</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            margin: 50px;
-        }
-        #reaction-button {
-            width: 200px;
-            height: 100px;
-            font-size: 20px;
-            font-weight: bold;
-            border: none;
-            cursor: pointer;
-            margin-top: 20px;
-        }
-        .red {
-            background-color: red;
-        }
-        .green {
-            background-color: green;
-        }
-        #history {
-            margin-top: 20px;
-            list-style-type: none;
-            padding: 0;
-        }
-        li {
-            padding: 5px;
-            font-size: 18px;
-        }
-        #download-pdf {
-            margin-top: 20px;
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Reaktionstest</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <style>
+    :root { --accent: #0a0; --warn:#d00; }
+    body { font-family: Arial, sans-serif; text-align:center; margin:50px; }
+    #reaction-button{
+      width:200px;height:100px;font-size:20px;font-weight:bold;border:none;cursor:pointer;margin-top:20px;border-radius:10px;color:#fff;
+      transition: background-color .15s ease, transform .05s ease;
+    }
+    #reaction-button:active{ transform: scale(0.99); }
+    .red{ background-color:#d33; }
+    .green{ background-color:#2a2; }
+    #history{ margin-top:20px; list-style:none; padding:0; }
+    li{ padding:5px; font-size:18px; }
+    li.early{ color: var(--warn); font-weight:600; }
+    li.hit{ color:#111; }
+    #download-pdf{
+      margin-top:20px; padding:10px 20px; font-size:16px; cursor:pointer; border-radius:8px; border:1px solid #ccc;
+    }
+    #result strong{ color: var(--accent); }
+    .muted{ color:#666; font-size:14px; margin-top:6px; }
+  </style>
 </head>
 <body>
 
-    <h1>Reaktionstest</h1>
-    <p>Klicke den Button, sobald er grün wird!</p>
-    
-    <button id="reaction-button" class="red">Warten...</button>
-    <p id="result"></p>
+  <h1>Reaktionstest</h1>
+  <p>Klicke den Button, sobald er grün wird!</p>
 
-    <h2>Letzte 10 Tests</h2>
-    <ul id="history"></ul>
+  <button id="reaction-button" class="red">Warten...</button>
+  <p id="result"></p>
+  <div class="muted" id="offset-note"></div>
 
-    <button id="download-pdf">Als PDF speichern</button>
+  <h2>Letzte 10 Tests</h2>
+  <ul id="history"></ul>
 
-    <script>
-        let button = document.getElementById("reaction-button");
-        let resultText = document.getElementById("result");
-        let historyList = document.getElementById("history");
-        let downloadButton = document.getElementById("download-pdf");
-        let startTime, endTime;
-        let history = [];
+  <button id="download-pdf">Als PDF speichern</button>
 
-        function startTest() {
-            resultText.textContent = "Warten...";
-            button.textContent = "Warten...";
-            button.classList.remove("green");
-            button.classList.add("red");
-            button.disabled = true;
+  <script>
+    // ===== Einstellungen =====
+    const PROCESSING_OFFSET_MS = 80; // typ. Geräte-Verarbeitungszeit 60–100ms -> hier Mittelwert 80ms
 
-            let randomDelay = Math.random() * 3000 + 2000; // 2-5 Sekunden
+    // ===== UI-Elemente =====
+    const button = document.getElementById("reaction-button");
+    const resultText = document.getElementById("result");
+    const historyList = document.getElementById("history");
+    const downloadButton = document.getElementById("download-pdf");
+    const offsetNote = document.getElementById("offset-note");
 
-            setTimeout(() => {
-                startTime = new Date();
-                button.classList.remove("red");
-                button.classList.add("green");
-                button.textContent = "KLICK!";
-                button.disabled = false;
-            }, randomDelay);
+    // ===== Zustand / Daten =====
+    let state = "idle";          // "waiting" (rot) | "ready" (grün)
+    let startTime = null;        // performance.now() bei Grün
+    const history = [];          // {ts, type:'hit'|'early', ms?:number}
+
+    offsetNote.textContent = `Hinweis: Von der gemessenen Zeit werden ${PROCESSING_OFFSET_MS} ms Geräte-Verarbeitung abgezogen.`;
+
+    function renderHistory() {
+      historyList.innerHTML = "";
+      history.slice(0,10).forEach(item => {
+        const li = document.createElement("li");
+        if (item.type === "early") {
+          li.textContent = `${item.ts} – zu früh`;
+          li.className = "early";
+        } else {
+          li.textContent = `${item.ts} – ${item.ms} ms`;
+          li.className = "hit";
         }
+        historyList.appendChild(li);
+      });
+    }
 
-        button.addEventListener("click", () => {
-            if (button.classList.contains("green")) {
-                endTime = new Date();
-                let reactionTime = endTime - startTime;
-                resultText.textContent = `Reaktionszeit: ${reactionTime} ms`;
+    function pushEarly() {
+      const ts = new Date().toLocaleString("de-DE");
+      history.unshift({ ts, type: "early" });
+      if (history.length > 10) history.pop();
+      renderHistory();
+      resultText.textContent = "Zu früh! Versuch neu gestartet.";
+    }
 
-                // Speichere das Ergebnis mit Datum & Uhrzeit
-                let timestamp = new Date().toLocaleString("de-DE");
-                history.unshift(`${timestamp} - ${reactionTime} ms`);
+    function pushHit(rawMs) {
+      const adjusted = Math.max(0, Math.round(rawMs - PROCESSING_OFFSET_MS));
+      const ts = new Date().toLocaleString("de-DE");
+      history.unshift({ ts, type: "hit", ms: adjusted });
+      if (history.length > 10) history.pop();
+      renderHistory();
+      resultText.innerHTML = `Reaktionszeit: <strong>${adjusted} ms</strong> (gemessen: ${Math.round(rawMs)} ms)`;
+    }
 
-                // Begrenze auf 10 Einträge
-                if (history.length > 10) {
-                    history.pop();
-                }
+    function setRed() {
+      button.classList.remove("green");
+      button.classList.add("red");
+      button.textContent = "Warten...";
+    }
 
-                // Zeige die Historie
-                historyList.innerHTML = "";
-                history.forEach(entry => {
-                    let li = document.createElement("li");
-                    li.textContent = entry;
-                    historyList.appendChild(li);
-                });
+    function setGreen() {
+      button.classList.remove("red");
+      button.classList.add("green");
+      button.textContent = "KLICK!";
+    }
 
-                startTest();
-            }
-        });
+    function startTest() {
+      state = "waiting";
+      startTime = null;
+      setRed();
+      // Während „waiting“ ist der Button absichtlich NICHT disabled,
+      // damit „zu früh“-Klicks erfasst werden können.
+      const randomDelay = Math.random() * 3000 + 2000; // 2–5 s
+      setTimeout(() => {
+        state = "ready";
+        startTime = performance.now();
+        setGreen();
+      }, randomDelay);
+    }
 
-        // Funktion zum PDF-Erstellen
-        downloadButton.addEventListener("click", () => {
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-
-            doc.setFontSize(16);
-            doc.text("Reaktionstest Ergebnisse", 20, 20);
-            doc.setFontSize(12);
-
-            history.forEach((entry, index) => {
-                doc.text(entry, 20, 40 + index * 10);
-            });
-
-            doc.save("Reaktionstest-Ergebnisse.pdf");
-        });
-
+    button.addEventListener("click", () => {
+      if (state === "waiting") {
+        // Zu früh geklickt
+        pushEarly();
         startTest();
-    </script>
+        return;
+      }
+      if (state === "ready") {
+        const end = performance.now();
+        const raw = end - startTime; // präzise Messung in ms
+        pushHit(raw);
+        startTest();
+      }
+    });
+
+    // PDF-Export
+    downloadButton.addEventListener("click", () => {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF();
+
+      doc.setFontSize(16);
+      doc.text("Reaktionstest Ergebnisse", 20, 20);
+      doc.setFontSize(11);
+      doc.text(`Abzug Geräte-Verarbeitung: ${PROCESSING_OFFSET_MS} ms`, 20, 28);
+
+      let y = 40;
+      history.slice(0, 10).forEach((item, idx) => {
+        const line = item.type === "early"
+          ? `${idx + 1}. ${item.ts} – zu früh`
+          : `${idx + 1}. ${item.ts} – ${item.ms} ms`;
+        doc.text(line, 20, y);
+        y += 8;
+      });
+
+      doc.save("Reaktionstest-Ergebnisse.pdf");
+    });
+
+    // Start
+    startTest();
+  </script>
 
 </body>
 </html>
