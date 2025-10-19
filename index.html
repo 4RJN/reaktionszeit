@@ -91,15 +91,16 @@
   /* ========== Buttons ========== */
   .btn{
     appearance: none; border:0; cursor:pointer; user-select:none;
-    border-radius: 12px;
-    padding: 14px 18px;
+    border-radius: 14px;
+    padding: 16px 20px;             /* größerer Tap-Bereich */
+    min-height: 56px;               /* Mindesthöhe für Touch */
     font-weight: 700; font-size: var(--fs-2);
     color: #fff;
     transition: transform .06s ease, box-shadow .2s ease, background .2s ease, opacity .2s ease;
     box-shadow: var(--shadow-soft);
   }
   .btn:active{ transform: translateY(1px) scale(.99); }
-  .btn:focus-visible{ outline: 2px solid var(--brand); outline-offset: 2px; }
+  .btn:focus-visible{ outline: 3px solid var(--brand); outline-offset: 2px; }
 
   #session-ctrl{
     background: linear-gradient(180deg, var(--brand), var(--brand-600));
@@ -111,12 +112,12 @@
     color: var(--text);
     border: 1px solid var(--border);
   }
-  #download-pdf:hover{ background: rgba(255,255,255,.04); }
+  #download-pdf:hover{ background: rgba(255,255,255,.05); }
 
   /* ========== Reaction Button ========== */
   #reaction-button{
     width: 100%;
-    min-height: 120px;
+    min-height: 140px;               /* größerer Tap-Bereich */
     font-size: var(--fs-3);
     border-radius: 18px;
     color:#fff;
@@ -125,14 +126,31 @@
   #reaction-button.red{ background: linear-gradient(180deg, var(--red), var(--red-700)); }
   #reaction-button.green{ background: linear-gradient(180deg, var(--green), var(--green-700)); }
 
+  /* ========== Actions layout (mehr Abstand, klar getrennt) ========== */
+  .actions{
+    display:flex;
+    flex-direction:column;
+    gap: var(--space-4);             /* deutlicher Abstand */
+  }
+  @media (min-width: 680px){
+    .actions{ flex-direction:row; }
+    .actions .btn{ flex:1; }
+  }
+
   /* ========== Progress ========== */
-  .progress-wrap{ width:100%; background: rgba(255,255,255,.06); border:1px solid var(--border); border-radius: 999px; overflow:hidden; height: 12px; }
+  .progress-wrap{
+    width:100%; background: rgba(255,255,255,.06);
+    border:1px solid var(--border); border-radius: 999px;
+    overflow:hidden; height: 14px;   /* etwas höher */
+    margin-top: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
   .progress-bar{ height:100%; width:0%; background: linear-gradient(90deg, var(--brand), var(--green)); transition: width .25s ease; }
 
   /* ========== History & Table ========== */
-  #history{ list-style:none; padding:0; margin:0; display:grid; gap:8px; }
+  #history{ list-style:none; padding:0; margin:0; display:grid; gap:10px; }
   #history li{
-    padding:10px 12px; border:1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.03);
+    padding:12px 14px; border:1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.03);
     display:flex; justify-content:space-between; align-items:center; font-size: var(--fs-1);
   }
   #history li.early{ color: var(--red); border-color: rgba(255,77,79,.35); background: rgba(255,77,79,.06); }
@@ -144,10 +162,6 @@
 
   .subtle{ color: var(--muted); font-size: var(--fs-1); }
 
-  /* Layout helpers */
-  .row{ display:flex; gap: var(--space-3); flex-wrap: wrap; }
-  .row .col{ flex: 1 1 260px; }
-
 </style>
 </head>
 <body>
@@ -158,19 +172,14 @@
     </header>
 
     <section class="card stack">
-      <div class="row">
-        <div class="col">
-          <button id="session-ctrl" class="btn">Test starten</button>
-        </div>
-        
+      <!-- Klar getrennte Aktionen mit großem Abstand -->
+      <div class="actions">
+        <button id="session-ctrl" class="btn">Test starten</button>
+        <button id="download-pdf" class="btn" title="PDF mit Ergebnissen" style="display:none">Als PDF speichern</button>
+      </div>
 
       <div class="progress-wrap" aria-hidden="true">
         <div id="progress" class="progress-bar"></div>
-      </div>
-
-<div class="col">
-          <button id="download-pdf" class="btn" title="PDF mit Ergebnissen">Als PDF speichern</button>
-        </div>
       </div>
 
       <button id="reaction-button" class="red" style="display:none">Warten…</button>
@@ -190,7 +199,6 @@
         </thead>
         <tbody></tbody>
       </table>
-      
     </section>
   </div>
 
@@ -360,8 +368,12 @@
     state = 'finished';
     setRed();
     btn.style.display = 'none';
+
+    /* UI-Änderungen: PDF erst jetzt zeigen, Start-Button mit großem Abstand separat */
     sessionCtrl.textContent = 'Test wiederholen';
     sessionCtrl.style.display = 'inline-block';
+    document.getElementById('download-pdf').style.display = 'inline-block';
+
     resultEl.textContent = 'Test abgeschlossen.';
     updateDailyTable();
   }
@@ -372,6 +384,7 @@
     resultEl.textContent = '';
     btn.style.display = 'block';
     sessionCtrl.style.display = 'none';
+    document.getElementById('download-pdf').style.display = 'none';  // PDF wieder verstecken
     sessionHits = 0;
     setProgress(0);
     state = 'idle';
@@ -419,7 +432,8 @@
     }
   });
 
-  pdfBtn.addEventListener('click', ()=>{
+  // PDF Export (unverändert – Button erscheint jetzt erst nach Abschluss)
+  document.getElementById('download-pdf').addEventListener('click', ()=>{
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
     doc.setFontSize(16);
