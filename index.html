@@ -1,38 +1,33 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Reaktionstest</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <style>
-    :root { --accent: #0a0; --warn:#d00; }
-    body { font-family: Arial, sans-serif; text-align:center; margin:50px; }
-    #reaction-button{
-      width:200px;height:100px;font-size:20px;font-weight:bold;border:none;cursor:pointer;margin-top:20px;border-radius:10px;color:#fff;
-      transition: background-color .15s ease, transform .05s ease;
-    }
-    #reaction-button:active{ transform: scale(0.99); }
-    .red{ background-color:#d33; }
-    .green{ background-color:#2a2; }
-    #history{ margin-top:20px; list-style:none; padding:0; }
-    li{ padding:5px; font-size:18px; }
-    li.early{ color: var(--warn); font-weight:600; }
-    li.hit{ color:#111; }
-    #download-pdf{
-      margin-top:20px; padding:10px 20px; font-size:16px; cursor:pointer; border-radius:8px; border:1px solid #ccc;
-    }
-    #result strong{ color: var(--accent); }
-    .muted{ color:#666; font-size:14px; margin-top:6px; }
-  </style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Reaktionstest</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root { --warn:#d00; --ok:#2a2; }
+  body{font-family:Arial,sans-serif;text-align:center;margin:40px;}
+  #reaction-button{width:220px;height:110px;font-size:20px;font-weight:700;border:none;border-radius:12px;color:#fff;cursor:pointer;}
+  .red{background:#d33;}
+  .green{background:#2a2;}
+  #history{list-style:none;padding:0;margin-top:16px}
+  #history li{padding:4px 0;font-size:18px}
+  #history li.early{color:var(--warn);font-weight:600}
+  .muted{color:#666;font-size:14px;margin-top:6px}
+  table{margin:20px auto;border-collapse:collapse;min-width:320px}
+  th,td{border:1px solid #ccc;padding:8px 10px}
+  th{text-align:center;background:#f6f6f6}
+  td{text-align:center}
+  @media (prefers-reduced-motion: reduce){ *{transition:none!important} }
+</style>
 </head>
 <body>
-
   <h1>Reaktionstest</h1>
-  <p>Klicke den Button, sobald er grün wird!</p>
+  <p>Klicke den Button, sobald er grün wird! (Zufällig nach 2–5 s)</p>
 
-  <button id="reaction-button" class="red">Warten...</button>
-  <p id="result"></p>
+  <button id="reaction-button" class="red">Warten…</button>
+  <p id="result" role="status" aria-live="polite"></p>
   <div class="muted" id="offset-note"></div>
 
   <h2>Letzte 10 Tests</h2>
@@ -40,122 +35,230 @@
 
   <button id="download-pdf">Als PDF speichern</button>
 
-  <script>
-    // ===== Einstellungen =====
-    const PROCESSING_OFFSET_MS = 80; // typ. Geräte-Verarbeitungszeit 60–100ms -> hier Mittelwert 80ms
+  <h2 style="margin-top:28px">Tagesübersicht (lokal gespeichert)</h2>
+  <table id="daily-table">
+    <thead>
+      <tr><th>Datum</th><th>Beste Reaktionszeit (ms)</th><th>Ø letzte 10 (ms)</th></tr>
+    </thead>
+    <tbody></tbody>
+  </table>
 
-    // ===== UI-Elemente =====
-    const button = document.getElementById("reaction-button");
-    const resultText = document.getElementById("result");
-    const historyList = document.getElementById("history");
-    const downloadButton = document.getElementById("download-pdf");
-    const offsetNote = document.getElementById("offset-note");
+<script>
+(() => {
+  // ---- Einstellungen ----
+  const DEFAULT_OFFSET_MS = 80; // 60–100ms realistisch
+  function getOffset(){ return +(localStorage.getItem("rt_offset_ms")||DEFAULT_OFFSET_MS); }
 
-    // ===== Zustand / Daten =====
-    let state = "idle";          // "waiting" (rot) | "ready" (grün)
-    let startTime = null;        // performance.now() bei Grün
-    const history = [];          // {ts, type:'hit'|'early', ms?:number}
+  // ---- DOM ----
+  const btn = document.getElementById('reaction-button');
+  const resultEl = document.getElementById('result');
+  const historyEl = document.getElementById('history');
+  const pdfBtn = document.getElementById('download-pdf');
+  const offsetNote = document.getElementById('offset-note');
+  const dailyTableBody = document.querySelector('#daily-table tbody');
 
-    offsetNote.textContent = `Hinweis: Von der gemessenen Zeit werden ${PROCESSING_OFFSET_MS} ms Geräte-Verarbeitung abgezogen.`;
+  // ---- Zustand ----
+  let state = 'idle';       // 'waiting' | 'ready' | 'idle'
+  let startTime = 0;        // performance.now() bei Grün
+  let holding = false;      // ob Finger/Maus unten
 
-    function renderHistory() {
-      historyList.innerHTML = "";
-      history.slice(0,10).forEach(item => {
-        const li = document.createElement("li");
-        if (item.type === "early") {
-          li.textContent = `${item.ts} – zu früh`;
-          li.className = "early";
-        } else {
-          li.textContent = `${item.ts} – ${item.ms} ms`;
-          li.className = "hit";
-        }
-        historyList.appendChild(li);
-      });
+  // Robuster Timer-State
+  let scheduled = null;     // Timeout-ID (einziger aktiver Timer)
+  let trialToken = 0;       // invalidiert alte Timer
+  let readyAt = 0;          // Zeitpunkt (perf.now) ab dem grün werden darf
+  let remainingMs = 0;      // Rest bis readyAt (für Sichtbarkeitswechsel)
+
+  const history = [];       // {ts, type:'hit'|'early', ms?} nur Anzeige (max 10)
+
+  offsetNote.textContent = `Es werden ${getOffset()} ms Geräte-Verarbeitung abgezogen.`;
+
+  // ---- Persistenz (nur Hits werden dauerhaft gespeichert) ----
+  const LS_KEY = 'rt_trials_v1';
+  function loadTrials(){
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '[]'); }
+    catch { return []; }
+  }
+  function saveTrial(trial){
+    const trials = loadTrials();
+    trials.unshift(trial);                 // jüngste vorne
+    if (trials.length > 1000) trials.pop();// Kappung
+    localStorage.setItem(LS_KEY, JSON.stringify(trials));
+  }
+  function ymd(d){ // YYYY-MM-DD
+    const pad = n=>String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  }
+
+  // ---- Tagesübersicht rendern ----
+  function updateDailyTable(){
+    const trials = loadTrials(); // nur Hits gespeichert
+    const byDate = new Map();
+    for (const t of trials){
+      if (typeof t.ms !== 'number') continue;
+      const arr = byDate.get(t.date) || [];
+      arr.push(t.ms);              // neueste zuerst
+      byDate.set(t.date, arr);
     }
-
-    function pushEarly() {
-      const ts = new Date().toLocaleString("de-DE");
-      history.unshift({ ts, type: "early" });
-      if (history.length > 10) history.pop();
-      renderHistory();
-      resultText.textContent = "Zu früh! Versuch neu gestartet.";
+    const rows = Array.from(byDate.entries()).sort((a,b)=> (a[0] < b[0] ? 1 : -1));
+    dailyTableBody.innerHTML = '';
+    for (const [date, list] of rows){
+      const best = Math.min(...list);
+      const last10 = list.slice(0,10);
+      const avg10 = Math.round(last10.reduce((s,x)=>s+x,0) / last10.length);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td>${date}</td><td>${best}</td><td>${avg10}</td>`;
+      dailyTableBody.appendChild(tr);
     }
+  }
 
-    function pushHit(rawMs) {
-      const adjusted = Math.max(0, Math.round(rawMs - PROCESSING_OFFSET_MS));
-      const ts = new Date().toLocaleString("de-DE");
-      history.unshift({ ts, type: "hit", ms: adjusted });
-      if (history.length > 10) history.pop();
-      renderHistory();
-      resultText.innerHTML = `Reaktionszeit: <strong>${adjusted} ms</strong> (gemessen: ${Math.round(rawMs)} ms)`;
-    }
+  // ---- UI / Anzeige Historie (nicht persistent) ----
+  function setRed(){ btn.classList.add('red'); btn.classList.remove('green'); btn.textContent='Warten…'; }
+  function setGreen(){ btn.classList.remove('red'); btn.classList.add('green'); btn.textContent='KLICK!'; }
+  function renderHistory(){
+    historyEl.innerHTML='';
+    history.slice(0,10).forEach(it=>{
+      const li=document.createElement('li');
+      if(it.type==='early'){ li.textContent=`${it.ts} – zu früh`; li.className='early'; }
+      else { li.textContent=`${it.ts} – ${it.ms} ms`; }
+      historyEl.appendChild(li);
+    });
+  }
+  function vibrateShort(){ if (navigator.vibrate) navigator.vibrate([15]); }
 
-    function setRed() {
-      button.classList.remove("green");
-      button.classList.add("red");
-      button.textContent = "Warten...";
-    }
+  function pushEarly(msg='Zu früh! Versuch neu gestartet.'){
+    history.unshift({ts:new Date().toLocaleString('de-DE'), type:'early'});
+    if(history.length>10) history.pop();
+    renderHistory();
+    resultEl.textContent = msg;
+    vibrateShort();
+  }
 
-    function setGreen() {
-      button.classList.remove("red");
-      button.classList.add("green");
-      button.textContent = "KLICK!";
-    }
+  function pushHit(rawMs){
+    const adj = Math.max(0, Math.round(rawMs - getOffset()));
+    const now = new Date();
+    const trial = { tsISO: now.toISOString(), date: ymd(now), ms: adj };
+    saveTrial(trial);
+    history.unshift({ts: now.toLocaleString('de-DE'), type:'hit', ms: adj});
+    if(history.length>10) history.pop();
+    renderHistory();
+    resultEl.innerHTML = `Reaktionszeit: <strong>${adj} ms</strong> (gemessen: ${Math.round(rawMs)} ms)`;
+    vibrateShort();
+    updateDailyTable();
+  }
 
-    function startTest() {
-      state = "waiting";
-      startTime = null;
-      setRed();
-      // Während „waiting“ ist der Button absichtlich NICHT disabled,
-      // damit „zu früh“-Klicks erfasst werden können.
-      const randomDelay = Math.random() * 3000 + 2000; // 2–5 s
-      setTimeout(() => {
-        state = "ready";
-        startTime = performance.now();
-        setGreen();
-      }, randomDelay);
-    }
+  // ===== Robustes Timing: garantiert echte 2–5 s im Vordergrund =====
+  function armTimer(token) {
+    clearTimeout(scheduled);
+    const now = performance.now();
+    const toGo = Math.max(0, readyAt - now);
 
-    button.addEventListener("click", () => {
-      if (state === "waiting") {
-        // Zu früh geklickt
-        pushEarly();
-        startTest();
+    if (document.hidden) return; // im Hintergrund nichts planen
+
+    scheduled = setTimeout(() => {
+      if (token !== trialToken) return; // alter Durchlauf
+      const now2 = performance.now();
+      if (now2 < readyAt) {             // Timer zu früh (Aufholer) -> Rest nachlegen
+        armTimer(token);
         return;
       }
-      if (state === "ready") {
-        const end = performance.now();
-        const raw = end - startTime; // präzise Messung in ms
-        pushHit(raw);
-        startTest();
-      }
-    });
-
-    // PDF-Export
-    downloadButton.addEventListener("click", () => {
-      const { jsPDF } = window.jspdf;
-      const doc = new jsPDF();
-
-      doc.setFontSize(16);
-      doc.text("Reaktionstest Ergebnisse", 20, 20);
-      doc.setFontSize(11);
-      doc.text(`Abzug Geräte-Verarbeitung: ${PROCESSING_OFFSET_MS} ms`, 20, 28);
-
-      let y = 40;
-      history.slice(0, 10).forEach((item, idx) => {
-        const line = item.type === "early"
-          ? `${idx + 1}. ${item.ts} – zu früh`
-          : `${idx + 1}. ${item.ts} – ${item.ms} ms`;
-        doc.text(line, 20, y);
-        y += 8;
+      requestAnimationFrame(() => {
+        if (token !== trialToken) return;
+        state = 'ready';
+        setGreen();
+        startTime = performance.now();
+        if (holding) { // Anti-Hold
+          pushEarly('Zu früh (gedrückt gehalten). Versuch neu gestartet.');
+          startTest();
+        }
       });
+    }, toGo);
+  }
 
-      doc.save("Reaktionstest-Ergebnisse.pdf");
+  function startTest(){
+    clearTimeout(scheduled);
+    trialToken++;                 // invalidiert alle alten Timer
+    state='waiting'; setRed();
+    startTime=0;
+
+    const delay = 2000 + Math.random()*3000; // 2–5 s
+    const now = performance.now();
+    readyAt = now + delay;
+    remainingMs = delay;
+
+    armTimer(trialToken);
+  }
+
+  // ---- Eingaben ----
+  btn.addEventListener('pointerdown', ()=>{
+    holding = true;
+    if(state==='waiting'){
+      pushEarly();
+      startTest();
+    } else if(state==='ready'){
+      const raw = performance.now()-startTime;
+      pushHit(raw);
+      startTest();
+    }
+  }, {passive:true});
+
+  btn.addEventListener('pointerup', ()=>{ holding = false; }, {passive:true});
+  btn.addEventListener('pointercancel', ()=>{ holding = false; }, {passive:true});
+  btn.addEventListener('pointerleave', ()=>{ holding = false; }, {passive:true});
+
+  // ---- Sichtbarkeitswechsel: echte Restzeit weiterlaufen lassen ----
+  document.addEventListener('visibilitychange', ()=>{
+    const now = performance.now();
+    remainingMs = Math.max(0, readyAt - now);
+    clearTimeout(scheduled);
+
+    if (document.hidden) {
+      state='idle';
+      setRed();
+      resultEl.textContent='Pausiert (Tab nicht sichtbar).';
+    } else {
+      readyAt = performance.now() + remainingMs; // Restzeit neu ansetzen
+      armTimer(trialToken);
+    }
+  });
+
+  // ---- PDF Export (nur sichtbare 10 + Hinweis auf Offset) ----
+  pdfBtn.addEventListener('click', ()=>{
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    doc.setFontSize(16);
+    doc.text('Reaktionstest Ergebnisse', 20, 20);
+    doc.setFontSize(11);
+    doc.text(`Offset-Abzug: ${getOffset()} ms`, 20, 28);
+    let y=40;
+    history.slice(0,10).forEach((it,i)=>{
+      const line = it.type==='early'
+        ? `${i+1}. ${it.ts} – zu früh`
+        : `${i+1}. ${it.ts} – ${it.ms} ms`;
+      doc.text(line, 20, y);
+      y+=8;
+    });
+    // Tagesübersicht anhängen
+    y += 8;
+    doc.setFontSize(12);
+    doc.text('Tagesübersicht:', 20, y); y+=8; doc.setFontSize(11);
+    const trials = loadTrials();
+    const byDate = new Map();
+    for (const t of trials){ if(typeof t.ms==='number'){ (byDate.get(t.date)||byDate.set(t.date,[]).get(t.date)).push(t.ms); } }
+    const rows = Array.from(byDate.entries()).sort((a,b)=> (a[0] < b[0] ? 1 : -1)).slice(0,20);
+    rows.forEach(([date, list])=>{
+      const best = Math.min(...list);
+      const avg10 = Math.round(list.slice(0,10).reduce((s,x)=>s+x,0)/Math.min(10,list.length));
+      doc.text(`${date}: Best ${best} ms | Ø10 ${avg10} ms`, 20, y);
+      y+=8;
     });
 
-    // Start
-    startTest();
-  </script>
+    doc.save('Reaktionstest-Ergebnisse.pdf');
+  });
 
+  // ---- Initial: Tabelle laden + Test starten ----
+  updateDailyTable();
+  startTest();
+})();
+</script>
 </body>
 </html>
